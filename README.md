@@ -3,7 +3,8 @@ The source code of paper: "DSDIR: A Two-Stage Framework for Addressing Noisy Lon
 
 
 # Dependencies
-pytorch >= 2.0.0
+pytorch >= 2.0.0  
+
 cuda >= 11.8
 
 The detailed environment set can be found in the requirements.txt
