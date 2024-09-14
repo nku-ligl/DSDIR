@@ -14,7 +14,8 @@ parser = argparse.ArgumentParser(description="根据命令行参数构造文件�
 parser.add_argument('--dataset_name', type=str, default='BoAu')
 
 # 添加 corruption_ratio 参数
-parser.add_argument('--corruption_type', type=str, default='asym')
+parser.add_argument('--noise_type', type=str, default='asym')
+
 
 
 # 解析命令行参数
@@ -292,7 +293,7 @@ class CICIDS2017Preprocessor(object):
         return (X_train, y_train), (X_val, y_val), (X_test, y_test)
 
 
-def load_data(dir_name, data_name, train_size, val_size, test_size, batch_size, seed, corruption_type,
+def load_data(dir_name, data_name, train_size, val_size, test_size, batch_size, seed, noise_type,
               corruption_ratio, sample_strategy,
               target_strategy):  # 路径名、数据集名称、训练集比例、验证集比例、测试集比例，0、1、2：欠采样、重采样、欠+重，0:中位数、1:平均数
     cicids2017 = CICIDS2017Preprocessor(
@@ -383,7 +384,7 @@ def load_data(dir_name, data_name, train_size, val_size, test_size, batch_size, 
     
     ratio = corruption_ratio
 
-    if corruption_type == 'asym':
+    if noise_type == 'asym':
         # 良性数据是不变的，恶意的翻转过来。
         # 0是良性，1是恶意
         selected_label_0_data = label_0_data
@@ -412,10 +413,15 @@ def load_data(dir_name, data_name, train_size, val_size, test_size, batch_size, 
 
 
         # 构造完整的文件路径
-        be_file_path = f'data/feat/{args.dataset_name}/{args.corruption_type}/{be_name}.npy'
-        ma_file_path = f'data/feat/{args.dataset_name}/{args.corruption_type}/{ma_name}.npy'
-        be_ma_file_path = f'data/feat/{args.dataset_name}/{args.corruption_type}/{be_ma_name}.npy' # 额外添加一个be_ma作为训练
-        test_file_path = f'data/feat/{args.dataset_name}/{args.corruption_type}/{test_name}.npy'
+        be_file_path = f'data/feat/{args.dataset_name}/{args.noise_type}/{be_name}.npy'
+        ma_file_path = f'data/feat/{args.dataset_name}/{args.noise_type}/{ma_name}.npy'
+        be_ma_file_path = f'data/feat/{args.dataset_name}/{args.noise_type}/{be_ma_name}.npy' # 额外添加一个be_ma作为训练
+        test_file_path = f'data/feat/{args.dataset_name}/{args.noise_type}/{test_name}.npy'
+
+        # 确保路径存在
+        for file_path in [be_file_path, ma_file_path, be_ma_file_path, test_file_path]:
+            directory = os.path.dirname(file_path)
+            os.makedirs(directory, exist_ok=True)
 
         # 保存数据到文件
         np.save(be_file_path, selected_label_0_data) # be是良性+恶意，其实
@@ -485,10 +491,10 @@ def load_data(dir_name, data_name, train_size, val_size, test_size, batch_size, 
 
 
         # 构造完整的文件路径
-        be_file_path = f'data/feat/{args.dataset_name}/{args.corruption_type}/{be_name}.npy'
-        ma_file_path = f'data/feat/{args.dataset_name}/{args.corruption_type}/{ma_name}.npy'
-        test_file_path = f'data/feat/{args.dataset_name}/{args.corruption_type}/{test_name}.npy'
-        be_ma_file_path = f'data/feat/{args.dataset_name}/{args.corruption_type}/{be_ma_name}.npy' # 额外添加一个be_ma作为训练
+        be_file_path = f'data/feat/{args.dataset_name}/{args.noise_type}/{be_name}.npy'
+        ma_file_path = f'data/feat/{args.dataset_name}/{args.noise_type}/{ma_name}.npy'
+        test_file_path = f'data/feat/{args.dataset_name}/{args.noise_type}/{test_name}.npy'
+        be_ma_file_path = f'data/feat/{args.dataset_name}/{args.noise_type}/{be_ma_name}.npy' # 额外添加一个be_ma作为训练
 
         # 保存数据到文件
         np.save(be_file_path, label_0_data) # be是良性+恶意，其实
@@ -531,4 +537,4 @@ ratio_distance = 0.2
 ratio_end = 0.8
 ratio_list = np.arange(ratio_start, ratio_end + ratio_distance, ratio_distance)
 for ratio in ratio_list:
-    load_data(f'data/{args.dataset_name}', args.dataset_name, 0.8, 0.0, 0.2, 128, 0, args.corruption_type, ratio, 'none', 'none')
+    load_data(f'data/dataset/{args.dataset_name}', args.dataset_name, 0.8, 0.0, 0.2, 128, 0, args.noise_type, ratio, 'none', 'none')

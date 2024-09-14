@@ -1,5 +1,8 @@
-import os
+import os 
 import sys
+
+# import MADE.get_clean_epochs2 
+# sys.path.append('..')
 
 # 获取当前脚本所在的目录 (main/DS.py 的目录，即 main)
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -9,6 +12,71 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(parent_dir)
 
 
+import MADE
+
+import argparse
+
+# 创建 ArgumentParser 对象
+parser = argparse.ArgumentParser(description="根据命令行参数构造文件名。")
+
+# 添加 noise_ratio 参数
+parser.add_argument('--dataset_name', type=str, default='malicious_TLS-2023')
+
+parser.add_argument('--noise_type', type=str, default='asym')
+
+parser.add_argument('--noise_ratio', type=float, default=0.7)
+
+# 添加 select_ratio 参数
+parser.add_argument('--select_ratio', type=float, default=0.3, help='初筛比')
+
+# 添加 beta 参数
+parser.add_argument('--beta', type=float, default=-1, help='class-balanced loss参数, -1表示cross entropy, 0.9-0.999表示CB loss的参数')
+
+# 添加 epoch 参数
+parser.add_argument('--epochs', type=int, default=100, help='the number of epochs')
+
+# 添加 epoch 参数
+parser.add_argument('--warm_up', type=int, default=20, help='the number of warmup epochs')
+
+# 添加 epoch 参数
+parser.add_argument('--k', type=int, default=0.95, help='EMA参数')
+
+parser.add_argument('--offset', type=float, default=0.5, help='偏移量')
+
+parser.add_argument('--min_threshold', type=float, default=0.5, help='不确定性最小值')
+
+# 解析命令行参数
+args = parser.parse_args()
+
+
+# 创建目录的函数
+def ensure_dir(directory):
+    # print('ok')
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        print(f"Created directory: {directory}")
+    else:
+        print(f"Directory already exists: {directory}")
+
+def DS(model_dir, feat_dir, made_dir, result_dir, cuda, noise_ratio, epochs):
+    
+    # AE.train.main(data_dir, model_dir, cuda)
+    # AE.get_feat.main(data_dir, model_dir, feat_dir, 'be', cuda)
+    # AE.get_feat.main(data_dir, model_dir, feat_dir, 'ma', cuda)
+    # AE.get_feat.main(data_dir, model_dir, feat_dir, 'test', cuda)
+    TRAIN = 'be_ma_'
+    TRAIN += str(round(noise_ratio,1))
+    print(TRAIN, '??')
+    MADE.train_epochs.main(feat_dir, model_dir, made_dir, TRAIN, cuda, '20', noise_ratio, epochs, args.dataset_name, args.noise_type)
+    if args.noise_type == 'asym':
+        MADE.get_clean_epochs.main(feat_dir, made_dir, '0.5', TRAIN, noise_ratio, args.dataset_name, args.noise_type)
+    else:
+        MADE.get_clean_epochs.main2(feat_dir, made_dir, '0.5', TRAIN, noise_ratio, args.dataset_name, args.noise_type)
+
+
+
+import os
+import sys
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader, TensorDataset
@@ -21,44 +89,6 @@ from utils.metric import *
 import argparse
 
 
-# device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# print(device)
-
-# exit(0)
-
-# 创建 ArgumentParser 对象
-parser = argparse.ArgumentParser(description="示例脚本，包含两个参数：noise_ratio 和 select_ratio。")
-
-# 添加 数据集名称
-parser.add_argument('--dataset_name', type=str, default='BoAu', help='数据集')
-
-# 噪声类型
-parser.add_argument('--noise_type', type=str, default='asym', help='噪声比')
-
-# 添加 noise_ratio 参数
-parser.add_argument('--noise_ratio', type=float, default=0.8, help='噪声比')
-
-# 添加 select_ratio 参数
-parser.add_argument('--select_ratio', type=float, default=0.3, help='初筛比')
-
-# 添加 beta 参数
-parser.add_argument('--beta', type=float, default=-1, help='衰减因子beta')
-
-# 添加 epoch 参数
-parser.add_argument('--epochs', type=int, default=100, help='epochs数量')
-
-# 添加 epoch 参数
-parser.add_argument('--warm_up', type=int, default=20, help='热身')
-
-# 添加 epoch 参数
-parser.add_argument('--k', type=int, default=0.95, help='EMA参数')
-
-parser.add_argument('--offset', type=float, default=0.5, help='偏移量')
-
-parser.add_argument('--min_threshold', type=float, default=0.5, help='不确定性最小值')
-
-# 解析命令行参数
-args = parser.parse_args()
 
 net = None  # MLP
 criterion = nn.CrossEntropyLoss()  # 计算loss
@@ -69,6 +99,8 @@ train_acc_list = []
 test_acc_list = []
 f = None
 flag = None # 记录每个样本被标记为某个label的次数
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 
 class CustomDataset(Dataset):
     def __init__(self, features, labels, true_labels):
@@ -158,9 +190,9 @@ def CB_loss(labels, logits, samples_per_cls, no_of_classes, loss_type, beta):
     return cb_loss
 
 
-def train(epoch=100, train_loader=None, val_loader=None, beta=-1, samples_per_cls = None):  # 原始的训练
+def train(net, epoch=100, train_loader=None, val_loader=None, beta=-1, samples_per_cls = None):  # 原始的训练
     print('\nEpoch: %d' % epoch)
-    print(len(cnt_per_class))
+    # print(len(cnt_per_class))
     # print(f.requires_grad)
     net.train()
     train_loss = 0
@@ -172,8 +204,8 @@ def train(epoch=100, train_loader=None, val_loader=None, beta=-1, samples_per_cl
         inputs, targets = inputs.to(device), targets.to(device)
 
         # 使用 scatter_add_ 来更新 cnt_per_class
-        if epoch == args.epochs:
-            cnt_per_class.scatter_add_(0, targets, torch.ones_like(targets, dtype=torch.int64))
+        # if epoch == args.epochs:
+            # cnt_per_class.scatter_add_(0, targets, torch.ones_like(targets, dtype=torch.int64))
 
         # print('target:', targets.shape)
         # print(inputs.shape, targets.shape)
@@ -317,8 +349,8 @@ def train(epoch=100, train_loader=None, val_loader=None, beta=-1, samples_per_cl
             targets[weight] = predicted[weight] # 用预测的值进行relabel
             loss = criterion(outputs[weight], targets[weight])  # 计算loss
 
-            if epoch == args.epochs:
-                cnt_per_class.scatter_add_(0, targets, torch.ones_like(targets, dtype=torch.int64))
+            # if epoch == args.epochs:
+            #     cnt_per_class.scatter_add_(0, targets, torch.ones_like(targets, dtype=torch.int64))
 
 
             # 计算权重
@@ -351,7 +383,7 @@ def train(epoch=100, train_loader=None, val_loader=None, beta=-1, samples_per_cl
     # print(TP+FP+TN+FN)
     torch.cuda.empty_cache()  # 清理缓存以释放内存
 
-def test(epoch, test_loader, file_path):
+def test(net, epoch, test_loader, file_path):
     loss_dis = [[] for i in range(100)]  # loss分布
     confusion_matrix[:] = 0  # 混淆矩阵清空
     print('\nEpoch: %d' % epoch)
@@ -393,244 +425,228 @@ def test(epoch, test_loader, file_path):
         write_matrix_to_file(confusion_matrix, file_path)
     else:
         append_to_file(confusion_matrix, file_path)
+    
+def DIR():
 
-    # for t in range(100):
-    #     if len(loss_dis[t]) > 0:
-    #         print(len(loss_dis[t]))
-            # print(':', loss_dis[t])
-    # save_dir = 'result/loss_dis/' + str(epoch)
-    # save_loss_histograms(loss_dis, save_dir=save_dir)
+    global f,flag,confusion_matrix
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # 根据参数构造文件名
+    be_ceshi_filename = f'data/feat/{args.dataset_name}/{args.noise_type}/be_ceshi_{args.noise_ratio}_{args.select_ratio}.npy'
+    ma_ceshi_filename = f'data/feat/{args.dataset_name}/{args.noise_type}/ma_ceshi_{args.noise_ratio}_{args.select_ratio}.npy'
+    ceshi_filename = f'data/feat/{args.dataset_name}/{args.noise_type}/ceshi_{args.noise_ratio}_{args.select_ratio}.npy'
+    remaining_file = f'data/feat/{args.dataset_name}/{args.noise_type}/remaining_0_ceshi_{args.noise_ratio}_{args.select_ratio}.npy'
 
-# 根据参数构造文件名
-be_ceshi_filename = f'data/feat/{args.dataset_name}/{args.noise_type}/be_ceshi_{args.noise_ratio}_{args.select_ratio}.npy'
-ma_ceshi_filename = f'data/feat/{args.dataset_name}/{args.noise_type}/ma_ceshi_{args.noise_ratio}_{args.select_ratio}.npy'
-ceshi_filename = f'data/feat/{args.dataset_name}/{args.noise_type}/ceshi_{args.noise_ratio}_{args.select_ratio}.npy'
-remaining_file = f'data/feat/{args.dataset_name}/{args.noise_type}/remaining_0_ceshi_{args.noise_ratio}_{args.select_ratio}.npy'
+    # 使用构造的文件名加载数据
+    be_ceshi = np.load(be_ceshi_filename) # MADE筛选的良性数据
+    ma_ceshi = np.load(ma_ceshi_filename) # 拿到手里的恶意数据，asym保证他们的干净性
+    ceshi = np.load(ceshi_filename) # 测试集
+    val_ceshi = np.load(remaining_file) #验证集，其实是MADE筛完以后不确定的数据。
 
-# 使用构造的文件名加载数据
-be_ceshi = np.load(be_ceshi_filename) # MADE筛选的良性数据
-ma_ceshi = np.load(ma_ceshi_filename) # 拿到手里的恶意数据，asym保证他们的干净性
-ceshi = np.load(ceshi_filename) # 测试集
-val_ceshi = np.load(remaining_file) #验证集，其实是MADE筛完以后不确定的数据。
+    # 假设数据格式：features 在前，labels 在最后一列
+    # 假设数据格式：features 在前，labels 在最后一列
+    X_train = np.vstack((be_ceshi[:, :-2], ma_ceshi[:, :-2]))
+    y_train = np.hstack((be_ceshi[:, -2], ma_ceshi[:, -2]))
+    y_train_true = np.hstack((be_ceshi[:, -1], ma_ceshi[:, -1]))
 
-# 假设数据格式：features 在前，labels 在最后一列
-# 假设数据格式：features 在前，labels 在最后一列
-X_train = np.vstack((be_ceshi[:, :-2], ma_ceshi[:, :-2]))
-y_train = np.hstack((be_ceshi[:, -2], ma_ceshi[:, -2]))
-y_train_true = np.hstack((be_ceshi[:, -1], ma_ceshi[:, -1]))
 
+    X_test = ceshi[:, :-2]
+    y_test = ceshi[:, -2]
+    y_test_true = ceshi[:, -1]
 
-X_test = ceshi[:, :-2]
-y_test = ceshi[:, -2]
-y_test_true = ceshi[:, -1]
 
+    X_val = val_ceshi[:, :-2]
+    y_val = val_ceshi[:, -2]
+    y_val_true = val_ceshi[:, -1]
 
-X_val = val_ceshi[:, :-2]
-y_val = val_ceshi[:, -2]
-y_val_true = val_ceshi[:, -1]
+    print('X_train:', X_train.shape)
+    print('y_train:', y_train.shape)
+    print('X_val:', X_val.shape)
+    print('y_val:', y_val.shape)
+    print('X_test:', X_test.shape)
+    print('y_test:', y_test.shape)
 
-for i in range(100):
-    print(i, ':', y_train[i], y_train_true[i])
+    # 计算每个标签的出现次数
+    unique_labels, counts = np.unique(y_val, return_counts=True)
+    # 遍历 unique_labels 和 counts
+    print('验证集:')
+    for label, count in zip(unique_labels, counts):
+        print(f"标签 {label} 出现了 {count} 次")
 
 
-print('X_train:', X_train.shape)
-print('y_train:', y_train.shape)
-print('X_val:', X_val.shape)
-print('y_val:', y_val.shape)
-print('X_test:', X_test.shape)
-print('y_test:', y_test.shape)
+    # 转换为 PyTorch 张量
+    X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+    y_train_tensor = torch.tensor(y_train, dtype=torch.long)
+    y_train_true_tensor = torch.tensor(y_train_true, dtype=torch.long)
 
-# 计算每个标签的出现次数
-unique_labels, counts = np.unique(y_val, return_counts=True)
-# 遍历 unique_labels 和 counts
-print('验证集:')
-for label, count in zip(unique_labels, counts):
-    print(f"标签 {label} 出现了 {count} 次")
+    X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+    y_test_tensor = torch.tensor(y_test, dtype=torch.long)
+    y_test_true_tensor = torch.tensor(y_test_true, dtype=torch.long)
 
-# f = f.to(device)
-# f.requires_grad_(False)
-# print(f.requires_grad)
+    X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
+    y_val_tensor = torch.tensor(y_val, dtype=torch.long)
+    y_val_true_tensor = torch.tensor(y_val_true, dtype=torch.long)
 
 
-# 转换为 PyTorch 张量
-X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
-y_train_tensor = torch.tensor(y_train, dtype=torch.long)
-y_train_true_tensor = torch.tensor(y_train_true, dtype=torch.long)
+    # 创建 PyTorch 数据集和数据加载器
+    train_dataset = CustomDataset(X_train_tensor, y_train_tensor, y_train_true_tensor)
+    val_dataset = CustomDataset(X_val_tensor, y_val_tensor, y_val_true_tensor)
+    test_dataset = CustomDataset(X_test_tensor, y_test_tensor, y_test_true_tensor)
 
-X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-y_test_tensor = torch.tensor(y_test, dtype=torch.long)
-y_test_true_tensor = torch.tensor(y_test_true, dtype=torch.long)
 
-X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
-y_val_tensor = torch.tensor(y_val, dtype=torch.long)
-y_val_true_tensor = torch.tensor(y_val_true, dtype=torch.long)
+    train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=128, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
 
+    # 获取数据特征的维度和标签的数量
+    input_dim = X_train.shape[1]
+    unique_y_train = np.unique(y_train)
+    unique_y_val = np.unique(y_val)
+    unique_y_test = np.unique(y_test)
+    # exit(0)
+    output_dim = len(np.unique(np.concatenate((unique_y_train, unique_y_test, unique_y_val))))
 
-# 创建 PyTorch 数据集和数据加载器
-train_dataset = CustomDataset(X_train_tensor, y_train_tensor, y_train_true_tensor)
-val_dataset = CustomDataset(X_val_tensor, y_val_tensor, y_val_true_tensor)
-test_dataset = CustomDataset(X_test_tensor, y_test_tensor, y_test_true_tensor)
+    cnt_per_class = torch.zeros(output_dim, dtype=torch.int64, device=device)
 
 
-train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=128, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
+    f = np.zeros(X_val.shape[0])
+    flag = np.zeros((X_val.shape[0], output_dim))
 
-# 获取数据特征的维度和标签的数量
-input_dim = X_train.shape[1]
-unique_y_train = np.unique(y_train)
-unique_y_val = np.unique(y_val)
-unique_y_test = np.unique(y_test)
-# exit(0)
-output_dim = len(np.unique(np.concatenate((unique_y_train, unique_y_test, unique_y_val))))
+    # 计算每个标签的出现次数
+    unique_labels, counts = np.unique(y_train, return_counts=True)
 
-cnt_per_class = torch.zeros(output_dim, dtype=torch.int64, device=device)
+    print('训练集:')
+    for label, count in zip(unique_labels, counts):
+        print(f"标签 {label} 出现了 {count} 次")
 
-f = np.zeros(X_val.shape[0])
-flag = np.zeros((X_val.shape[0], output_dim))
+    samples_per_cls = [1] * output_dim  # 存储每个类别的样本数量
+    # print(samples_per_cls)
+    # 将结果打印出来
+    for i in range(len(counts)):
+        samples_per_cls[int(unique_labels[i])] = counts[i]
 
+    print(samples_per_cls)
 
-# 计算每个标签的出现次数
-unique_labels, counts = np.unique(y_train, return_counts=True)
+    # print('input:', input_dim, 'output:', output_dim)
 
-print('训练集:')
-for label, count in zip(unique_labels, counts):
-    print(f"标签 {label} 出现了 {count} 次")
+    confusion_matrix = torch.zeros(output_dim, output_dim)  # m*m的全0混淆矩阵
 
-samples_per_cls = [1] * output_dim  # 存储每个类别的样本数量
-# print(samples_per_cls)
-# 将结果打印出来
-for i in range(len(counts)):
-    samples_per_cls[int(unique_labels[i])] = counts[i]
+    # beta = 0.0 # beta设置
 
-print(samples_per_cls)
+    # 初始化 MLP
+    net = MLP(num_features=input_dim, num_labels=output_dim)  # 网络
 
+    net = net.to(device)
+    if device == 'cuda':
+        net = torch.nn.DataParallel(net)
+    global optimizer
+    optimizer = optim.SGD(net.parameters(), lr=0.01,
+                        momentum=0.9)
 
+    print('输入维度和输出维度:', input_dim, output_dim)
 
-# print('input:', input_dim, 'output:', output_dim)
+    # 打印数据集的长度
+    print(f"训练集的长度: {len(train_loader.dataset)}")
+    print(f"测试集的长度: {len(test_loader.dataset)}")
 
-confusion_matrix = torch.zeros(output_dim, output_dim)  # m*m的全0混淆矩阵
+    print('beta:', args.beta)
+    epochs = range(1, 1 + args.epochs)  # epochs
+    epochs = list(epochs)
 
-# beta = 0.0 # beta设置
 
+    # 构建文件名
+    file_name = f'result/{args.dataset_name}/{args.noise_type}/ratio_{args.noise_ratio}/select_{args.select_ratio}/beta_{args.beta}/warmup_{args.warm_up}'
 
-# 初始化 MLP
-net = MLP(num_features=input_dim, num_labels=output_dim)  # 网络
-net = net.to(device)
-if device == 'cuda':
-    net = torch.nn.DataParallel(net)
+    # 构建完整的文件路径
+    txt_confu_name = f'{file_name}/confu.txt'
+    txt_confu_analyze_name = f'{file_name}/confu_{args.min_threshold}_analyze.txt'
+    figure_acc_name = f'{file_name}/acc.png'
+    figure_confu_name = f'{file_name}/confu.png'
 
-optimizer = optim.SGD(net.parameters(), lr=0.1,
-                      momentum=0.9)
+    # 确保目录存在
+    os.makedirs(os.path.dirname(txt_confu_name), exist_ok=True)
+    os.makedirs(os.path.dirname(txt_confu_analyze_name), exist_ok=True)
+    os.makedirs(os.path.dirname(figure_acc_name), exist_ok=True)
+    os.makedirs(os.path.dirname(figure_confu_name), exist_ok=True)
 
-print('输入维度和输出维度:', input_dim, output_dim)
+    print(type(net))
 
-# 打印数据集的长度
-print(f"训练集的长度: {len(train_loader.dataset)}")
-print(f"测试集的长度: {len(test_loader.dataset)}")
+    for epoch in epochs:
+        train(net, epoch, train_loader, val_loader, args.beta, samples_per_cls)
+        test(net, epoch, test_loader, txt_confu_name)
 
-print('beta:', args.beta)
-epochs = range(1, 1 + args.epochs)  # epochs
-epochs = list(epochs)
+    from collections import Counter
 
-# file_name = f'_{args.dataset_name}_{args.noise_ratio}_{args.select_ratio}_{args.beta}_{args.warm_up}'
-# txt_confu_name = f'result/confu{file_name}.txt'
-# txt_confu_analyze_name = f'result/confu{file_name}_{args.min_threshold}_analyze.txt'
-# figure_acc_name = f'result/acc{file_name}.png'  # 假设文件扩展名是txt
-# figure_confu_name = f'result/confu{file_name}.png'
+    # 初始化计数器
+    target_counter = Counter()
+    correct_counter = Counter()
 
+    tot = 0
+    # with open('targets_labels.txt', 'w') as file:
+    for batch_idx, (inputs, targets, targets_true, idx) in enumerate(val_loader):
+        predicted_labels = np.argmax(flag[idx], axis=1)
+        targets = targets.cpu().detach().numpy()
+        # if batch_idx < 5:
+        #     print(targets.shape)
+        #     print(predicted_labels.shape)
+        #     print(targets == predicted_labels)
+        eq_idx = targets == predicted_labels
+        num = eq_idx.sum()
 
-# 构建文件名
-file_name = f'result/{args.dataset_name}/{args.noise_type}/ratio_{args.noise_ratio}/select_{args.select_ratio}/beta_{args.beta}/warmup_{args.warm_up}'
+        # 统计 targets 中每个数的出现次数
+        target_counter.update(targets)
 
-# 构建完整的文件路径
-txt_confu_name = f'{file_name}/confu.txt'
-txt_confu_analyze_name = f'{file_name}/confu_{args.min_threshold}_analyze.txt'
-figure_acc_name = f'{file_name}/acc.png'
-figure_confu_name = f'{file_name}/confu.png'
+        # 统计 eq_idx 为 True 时，targets 中每个数的出现次数
+        correct_counter.update(targets[eq_idx])
 
-# 确保目录存在
-os.makedirs(os.path.dirname(txt_confu_name), exist_ok=True)
-os.makedirs(os.path.dirname(txt_confu_analyze_name), exist_ok=True)
-os.makedirs(os.path.dirname(figure_acc_name), exist_ok=True)
-os.makedirs(os.path.dirname(figure_confu_name), exist_ok=True)
 
+        tot += num
 
+    print(tot, X_val.shape[0], tot/X_val.shape[0])
 
-for epoch in epochs:
-    train(epoch, train_loader, val_loader, args.beta, samples_per_cls)
-    test(epoch, test_loader, txt_confu_name)
+    # 输出结果
+    print("Targets中每个数的出现次数:", dict(target_counter))
+    print("Targets对应eq_idx下标中每个数的出现次数:", dict(correct_counter))
 
-# file_path = 'cnt_per_class.txt'
+    # 计算并输出每个数在 targets 中被正确预测的比例
+    accuracy_per_class = {}
+    for key in target_counter:
+        accuracy_per_class[key] = correct_counter[key] / target_counter[key] if target_counter[key] > 0 else 0
 
-# 将 cnt_per_class 转换为 Python 列表并写入 TXT 文件
-# with open(file_path, 'w') as f:
-#     for value in cnt_per_class.tolist():
-#         f.write(f"{value}\n")
+    print("每个数被正确预测的比例:", accuracy_per_class)
 
+    plot_accuracy(
+        epoch_list=epochs,
+        train_acc_list=train_acc_list,
+        test_acc_list=test_acc_list,
+        save_path=figure_acc_name,  # 指定保存图表的文件路径
+        train_label_name='Training Accuracy',
+        test_label_name='Test Accuracy'
+    )
 
-from collections import Counter
+    plot_confusion_matrix(confusion_matrix, figure_confu_name)
 
-# 初始化计数器
-target_counter = Counter()
-correct_counter = Counter()
+    sorted_results, categories = analyze_confusion_matrix(confusion_matrix)
 
-tot = 0
-# with open('targets_labels.txt', 'w') as file:
-for batch_idx, (inputs, targets, targets_true, idx) in enumerate(val_loader):
-    predicted_labels = np.argmax(flag[idx], axis=1)
-    targets = targets.cpu().detach().numpy()
-    # if batch_idx < 5:
-    #     print(targets.shape)
-    #     print(predicted_labels.shape)
-    #     print(targets == predicted_labels)
-    eq_idx = targets == predicted_labels
-    num = eq_idx.sum()
+    save_results_to_file(txt_confu_analyze_name, sorted_results, categories)
 
-    # 统计 targets 中每个数的出现次数
-    target_counter.update(targets)
 
-    # 统计 eq_idx 为 True 时，targets 中每个数的出现次数
-    correct_counter.update(targets[eq_idx])
+def main():
+    
+    feat_dir = 'data/feat/' + args.dataset_name + '/'  + args.noise_type
+    model_dir= 'data/model'
+    made_dir = 'data/made'
+    result_dir='data/result'
 
-    # for i in range(num):
-    #     # 写入到文件而不是打印到控制台
-    #     file.write(f"{targets[i]} |||  ")
-    #     for j in range(len(flag[idx][i])):
-    #         if flag[idx][i][j] != 0:
-    #             file.write(f' {j}:{flag[idx][i][j]}')
-    #     file.write("\n")
+    # 确保目录存在
+    ensure_dir(feat_dir)
+    ensure_dir(model_dir)
+    ensure_dir(made_dir)
+    ensure_dir(result_dir)
 
-    tot += num
+    cuda = 0
+    DS(model_dir, feat_dir, made_dir, result_dir, cuda, args.noise_ratio, args.epochs)
+    DIR()
 
-print(tot, X_val.shape[0], tot/X_val.shape[0])
 
-# 输出结果
-print("Targets中每个数的出现次数:", dict(target_counter))
-print("Targets对应eq_idx下标中每个数的出现次数:", dict(correct_counter))
-
-# 计算并输出每个数在 targets 中被正确预测的比例
-accuracy_per_class = {}
-for key in target_counter:
-    accuracy_per_class[key] = correct_counter[key] / target_counter[key] if target_counter[key] > 0 else 0
-
-print("每个数被正确预测的比例:", accuracy_per_class)
-
-plot_accuracy(
-    epoch_list=epochs,
-    train_acc_list=train_acc_list,
-    test_acc_list=test_acc_list,
-    save_path=figure_acc_name,  # 指定保存图表的文件路径
-    train_label_name='Training Accuracy',
-    test_label_name='Test Accuracy'
-)
-
-plot_confusion_matrix(confusion_matrix, figure_confu_name)
-
-sorted_results, categories = analyze_confusion_matrix(confusion_matrix)
-
-save_results_to_file(txt_confu_analyze_name, sorted_results, categories)
-
-
+if __name__ == '__main__':
+    main()

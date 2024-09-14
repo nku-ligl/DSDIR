@@ -128,9 +128,15 @@ def main(feat_dir, made_dir, alpha, TRAIN, corruption_ratio, data_name, corrupti
                             nlogp_lst[i + be_number].append(s)
                     print(filename, ':', cnt)
 
+    path_prefix = f'data/result_DS/{data_name}/{corruption_type}/ratio_{corruption_ratio}/'
+    if not os.path.exists(path_prefix):
+        os.makedirs(path_prefix)
+
+
     file_path = f"NLogP_{data_name}_{str(corruption_ratio)}.txt"
 
-    with open(file_path, 'w') as f:
+    with open(path_prefix + file_path, 'w') as f:
+        print('open success:', path_prefix + file_path)
         for item in NLogP:
             f.write(f"{item}\n")
 
@@ -161,7 +167,7 @@ def main(feat_dir, made_dir, alpha, TRAIN, corruption_ratio, data_name, corrupti
     counts = {cp: 0 for cp in checkpoints}
 
     cnt = 0
-    with open(f'log_label_{data_name}_{str(corruption_ratio)}.txt', 'w') as file:
+    with open(path_prefix + f'log_label_{data_name}_{str(corruption_ratio)}.txt', 'w') as file:
         # 追加内容到文件
         for i in range(len(seq)):
             file.write(f"{i}: {NLogP[seq[i]]}, label: {feats[seq[i]][-1]}\n")
@@ -175,7 +181,7 @@ def main(feat_dir, made_dir, alpha, TRAIN, corruption_ratio, data_name, corrupti
         if i + 1 in checkpoints:
             counts[i + 1] = cnt
 
-    with open(f'output_{data_name}_{str(corruption_ratio)}.txt', 'a') as file:
+    with open(path_prefix + f'output_{data_name}_{str(corruption_ratio)}.txt', 'a') as file:
         for cp in checkpoints:
             percentage = (counts[cp] / cp) * 100
             # 格式化字符串并写入文件
@@ -346,9 +352,15 @@ def main2(feat_dir, made_dir, alpha, TRAIN, corruption_ratio, data_name , corrup
                                 NLogP[i + be_number] = NLogP[i + be_number] + s
                                 nlogp_lst[i + be_number].append(s)
 
-    file_path = f"NLogP_{data_name}_{str(corruption_ratio)}.txt"
 
-    with open(file_path, 'w') as f:
+
+    file_path = f"NLogP_{data_name}_{str(corruption_ratio)}.txt"
+    
+    path_prefix = f'data/result_DS/{data_name}/{corruption_type}/ratio_{corruption_ratio}/'
+    if not os.path.exists(path_prefix):
+        os.makedirs(path_prefix)
+
+    with open(path_prefix + file_path, 'w') as f:
         for item in NLogP:
             f.write(f"{item}\n")
 
