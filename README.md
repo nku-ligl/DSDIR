@@ -1,5 +1,6 @@
 # DSDIR
 The source code of paper: "DSDIR: A Two-Stage Framework for Addressing Noisy Long-Tailed Problems in Malicious Traffic Detection" (Accepted by ICASSP 2025)
+Paper Link: https://ieeexplore.ieee.org/document/10889365/
 
 
 # Dependencies
